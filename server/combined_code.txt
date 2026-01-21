@@ -1,0 +1,4125 @@
+PROJECT CODE BUNDLE
+Generated: 1/20/2026, 6:35:53 PM
+Total Files: 30
+
+============================================================
+
+
+
+============================================================
+FILE: bundle-code.js
+============================================================
+
+const fs = require('fs');
+const path = require('path');
+
+// Configuration
+const OUTPUT_FILE = 'combined_code.txt';
+const INCLUDE_EXTENSIONS = ['.js', '.ejs', '.css', '.json', '.env'];
+const EXCLUDE_DIRS = ['node_modules', 'dist', 'build', '.git', '.vscode'];
+const EXCLUDE_FILES = ['package-lock.json', 'yarn.lock', 'combined_code.txt'];
+
+// Style for headers (you can customize these)
+const HEADER_STYLE = {
+  top: '='.repeat(60),
+  bottom: '='.repeat(60)
+};
+
+function shouldIncludeFile(filePath) {
+  const ext = path.extname(filePath);
+  const fileName = path.basename(filePath);
+  
+  // Check extension
+  if (!INCLUDE_EXTENSIONS.includes(ext)) {
+    return false;
+  }
+  
+  // Check excluded files
+  if (EXCLUDE_FILES.includes(fileName)) {
+    return false;
+  }
+  
+  // Check if in excluded directory
+  for (const excludeDir of EXCLUDE_DIRS) {
+    if (filePath.includes(`${path.sep}${excludeDir}${path.sep}`) || 
+        filePath.startsWith(`${excludeDir}${path.sep}`)) {
+      return false;
+    }
+  }
+  
+  return true;
+}
+
+function processFile(filePath) {
+  try {
+    const relativePath = path.relative(process.cwd(), filePath);
+    const content = fs.readFileSync(filePath, 'utf8');
+    
+    let output = '\n\n';
+    output += `${HEADER_STYLE.top}\n`;
+    output += `FILE: ${relativePath}\n`;
+    output += `${HEADER_STYLE.bottom}\n\n`;
+    output += content;
+    
+    return output;
+  } catch (error) {
+    console.error(`Error reading ${filePath}:`, error.message);
+    return '';
+  }
+}
+
+function findFiles(dir) {
+  let files = [];
+  
+  try {
+    const items = fs.readdirSync(dir);
+    
+    for (const item of items) {
+      const fullPath = path.join(dir, item);
+      
+      try {
+        const stat = fs.statSync(fullPath);
+        
+        if (stat.isDirectory()) {
+          // Check if directory should be excluded
+          const dirName = path.basename(fullPath);
+          if (!EXCLUDE_DIRS.includes(dirName)) {
+            files = files.concat(findFiles(fullPath));
+          }
+        } else if (shouldIncludeFile(fullPath)) {
+          files.push(fullPath);
+        }
+      } catch (err) {
+        console.warn(`Skipping ${fullPath}: ${err.message}`);
+      }
+    }
+  } catch (error) {
+    console.error(`Error reading directory ${dir}:`, error.message);
+  }
+  
+  return files;
+}
+
+function bundleProject() {
+  console.log('📦 Bundling project files...');
+  console.log('Looking for extensions:', INCLUDE_EXTENSIONS.join(', '));
+  console.log('Excluding directories:', EXCLUDE_DIRS.join(', '));
+  
+  // Find all files
+  const allFiles = findFiles('.');
+  console.log(`Found ${allFiles.length} files to bundle\n`);
+  
+  if (allFiles.length === 0) {
+    console.log('❌ No files found with specified extensions!');
+    return;
+  }
+  
+  // Create output file
+  let combinedContent = `PROJECT CODE BUNDLE\n`;
+  combinedContent += `Generated: ${new Date().toLocaleString()}\n`;
+  combinedContent += `Total Files: ${allFiles.length}\n`;
+  combinedContent += `\n${'='.repeat(60)}\n\n`;
+  
+  // Process each file
+  allFiles.forEach((file, index) => {
+    console.log(`Processing [${index + 1}/${allFiles.length}]: ${path.relative(process.cwd(), file)}`);
+    combinedContent += processFile(file);
+  });
+  
+  // Write to file
+  fs.writeFileSync(OUTPUT_FILE, combinedContent, 'utf8');
+  
+  console.log(`\n✅ Done! All code bundled into: ${OUTPUT_FILE}`);
+  console.log(`📁 Total size: ${(combinedContent.length / 1024).toFixed(2)} KB`);
+  
+  // Show summary
+  console.log('\n📋 File Type Summary:');
+  const summary = {};
+  allFiles.forEach(file => {
+    const ext = path.extname(file);
+    summary[ext] = (summary[ext] || 0) + 1;
+  });
+  
+  Object.entries(summary).forEach(([ext, count]) => {
+    console.log(`  ${ext}: ${count} files`);
+  });
+}
+
+// Run the script
+bundleProject();
+
+============================================================
+FILE: config/db.js
+============================================================
+
+const mongoose = require('mongoose');
+
+const connectDB = async () => {
+  try {
+    await mongoose.connect(process.env.MONGO_URI);
+    console.log("MongoDB Connected");
+  } catch (error) {
+    console.error(error);
+    process.exit(1);
+  }
+};
+
+module.exports = connectDB;
+
+============================================================
+FILE: controllers/adminController.js
+============================================================
+
+// controllers/adminController.js
+const User = require('../models/User');
+const Bus = require('../models/Bus');
+const bcrypt = require('bcryptjs');
+
+// Admin Dashboard
+exports.dashboard = async (req, res) => {
+  try {
+    // Get counts for dashboard
+    const totalUsers = await User.countDocuments();
+    const totalStudents = await User.countDocuments({ role: 'student' });
+    const totalDrivers = await User.countDocuments({ role: 'driver' });
+    const totalAdmins = await User.countDocuments({ role: 'admin' });
+    const totalBuses = await Bus.countDocuments();
+    
+    // Get active buses (updated in last 10 minutes)
+    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+    const activeBuses = await Bus.countDocuments({
+      updatedAt: { $gte: tenMinutesAgo }
+    });
+    
+    // Get recent buses
+    const recentBuses = await Bus.find()
+      .sort({ updatedAt: -1 })
+      .limit(5)
+      .populate('driverId', 'name email')
+      .populate('students', 'name email');
+    
+    // Get recent users
+    const recentUsers = await User.find()
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .select('name email role createdAt');
+    
+    // Render with user from session (not driver)
+    res.render('admin/dashboard', {
+      title: 'Admin Dashboard',
+      user: req.session,  // This is what should be used in the template
+      stats: {
+        totalUsers,
+        totalStudents,
+        totalDrivers,
+        totalAdmins,
+        totalBuses,
+        activeBuses,
+        inactiveBuses: totalBuses - activeBuses
+      },
+      recentBuses,
+      recentUsers
+    });
+  } catch (error) {
+    console.error('Admin dashboard error:', error);
+    res.status(500).render('error', {
+      message: 'Error loading dashboard',
+      error: error.message
+    });
+  }
+};
+
+// User Management
+exports.getUsers = async (req, res) => {
+  try {
+    const { role, search } = req.query;
+    
+    let filter = {};
+    
+    // Filter by role if specified
+    if (role && role !== 'all') {
+      filter.role = role;
+    }
+    
+    // Search by name or email
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } },
+        { studentId: { $regex: search, $options: 'i' } }
+      ];
+    }
+    
+    const users = await User.find(filter)
+      .sort({ createdAt: -1 })
+      .select('-password'); // Exclude password
+    
+    res.render('admin/users', {
+      title: 'User Management',
+      user: req.session,
+      users,
+      currentRole: role || 'all',
+      search: search || ''
+    });
+  } catch (error) {
+    console.error('Get users error:', error);
+    res.status(500).render('error', {
+      message: 'Error loading users',
+      error: error.message
+    });
+  }
+};
+
+// Create new user
+// Create new user - FIXED VERSION
+// In adminController.js - Update createUser function
+exports.createUser = async (req, res) => {
+  try {
+    const { name, email, password, role, studentId, phone, busNumber } = req.body;
+    
+    // Validate required fields
+    if (!name || !email || !password || !role) {
+      return res.status(400).json({
+        success: false,
+        message: 'Name, email, password, and role are required',
+        formData: { name, email, role, studentId, phone, busNumber } // Return form data
+      });
+    }
+    
+    // ... rest of your createUser function ...
+    
+  } catch (error) {
+    console.error('Create user error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error creating user: ' + error.message,
+      formData: req.body // Return form data on error
+    });
+  }
+};
+
+// Update user
+exports.updateUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, email, phone, studentId, role, busNumber } = req.body;
+    
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+    
+    // Update fields
+    user.name = name || user.name;
+    user.email = email || user.email;
+    user.phone = phone || user.phone;
+    user.role = role || user.role;
+    
+    if (role === 'student') {
+      user.studentId = studentId || user.studentId;
+    }
+    
+    // Handle bus assignment changes
+    if (busNumber && role === 'student') {
+      const bus = await Bus.findOne({ busNumber });
+      if (!bus) {
+        return res.status(400).json({
+          success: false,
+          message: `Bus ${busNumber} not found`
+        });
+      }
+      
+      // Remove from old bus
+      if (user.busAssigned) {
+        await Bus.findByIdAndUpdate(user.busAssigned, {
+          $pull: { students: user._id }
+        });
+      }
+      
+      // Add to new bus
+      user.busAssigned = bus._id;
+      await Bus.findByIdAndUpdate(bus._id, {
+        $addToSet: { students: user._id }
+      });
+    }
+    
+    // Save user changes
+    await user.save();
+    
+    res.json({
+      success: true,
+      message: 'User updated successfully',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role
+      }
+    });
+    
+  } catch (error) {
+    console.error('Update user error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating user: ' + error.message
+    });
+  }
+};
+
+// Delete user
+exports.deleteUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+    
+    // Remove user from bus assignments
+    if (user.role === 'student' && user.busAssigned) {
+      await Bus.findByIdAndUpdate(user.busAssigned, {
+        $pull: { students: user._id }
+      });
+    }
+    
+    if (user.role === 'driver') {
+      // Remove driver from bus
+      await Bus.updateMany(
+        { driverId: user._id },
+        { $unset: { driverId: '', driverName: '' } }
+      );
+    }
+    
+    // Delete user
+    await User.findByIdAndDelete(id);
+    
+    res.json({
+      success: true,
+      message: 'User deleted successfully'
+    });
+    
+  } catch (error) {
+    console.error('Delete user error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error deleting user: ' + error.message
+    });
+  }
+};
+
+// Bus Management
+exports.getBuses = async (req, res) => {
+  try {
+    const { status, search } = req.query;
+    
+    let filter = {};
+    
+    if (status && status !== 'all') {
+      filter.status = status;
+    }
+    
+    if (search) {
+      filter.$or = [
+        { busNumber: { $regex: search, $options: 'i' } },
+        { routeName: { $regex: search, $options: 'i' } },
+        { driverName: { $regex: search, $options: 'i' } }
+      ];
+    }
+    
+    const buses = await Bus.find(filter)
+      .sort({ updatedAt: -1 })
+      .populate('driverId', 'name email')
+      .populate('students', 'name email');
+    
+    res.render('admin/buses', {
+      title: 'Bus Management',
+      user: req.session,
+      buses,
+      currentStatus: status || 'all',
+      search: search || ''
+    });
+  } catch (error) {
+    console.error('Get buses error:', error);
+    res.status(500).render('error', {
+      message: 'Error loading buses',
+      error: error.message
+    });
+  }
+};
+
+// Create new bus
+exports.createBus = async (req, res) => {
+  try {
+    const { busId, busNumber, routeName, capacity } = req.body;
+    
+    if (!busId || !busNumber) {
+      return res.status(400).json({
+        success: false,
+        message: 'Bus ID and Bus Number are required'
+      });
+    }
+    
+    // Check if bus already exists
+    const existingBus = await Bus.findOne({
+      $or: [{ busId }, { busNumber }]
+    });
+    
+    if (existingBus) {
+      return res.status(400).json({
+        success: false,
+        message: 'Bus with this ID or number already exists'
+      });
+    }
+    
+    const bus = new Bus({
+      busId,
+      busNumber,
+      routeName,
+      capacity: capacity || 40,
+      status: 'stopped',
+      latitude: 12.9716, // Default location
+      longitude: 77.5946
+    });
+    
+    await bus.save();
+    
+    res.json({
+      success: true,
+      message: 'Bus created successfully',
+      bus: {
+        id: bus._id,
+        busId: bus.busId,
+        busNumber: bus.busNumber,
+        routeName: bus.routeName
+      }
+    });
+    
+  } catch (error) {
+    console.error('Create bus error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error creating bus: ' + error.message
+    });
+  }
+};
+
+// Update bus
+exports.updateBus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { busNumber, routeName, capacity, status, driverId } = req.body;
+    
+    const bus = await Bus.findById(id);
+    if (!bus) {
+      return res.status(404).json({
+        success: false,
+        message: 'Bus not found'
+      });
+    }
+    
+    bus.busNumber = busNumber || bus.busNumber;
+    bus.routeName = routeName || bus.routeName;
+    bus.capacity = capacity || bus.capacity;
+    bus.status = status || bus.status;
+    
+    if (driverId) {
+      const driver = await User.findById(driverId);
+      if (driver && driver.role === 'driver') {
+        bus.driverId = driver._id;
+        bus.driverName = driver.name;
+      }
+    }
+    
+    await bus.save();
+    
+    res.json({
+      success: true,
+      message: 'Bus updated successfully',
+      bus: {
+        id: bus._id,
+        busNumber: bus.busNumber,
+        routeName: bus.routeName
+      }
+    });
+    
+  } catch (error) {
+    console.error('Update bus error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating bus: ' + error.message
+    });
+  }
+};
+
+// Delete bus
+exports.deleteBus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const bus = await Bus.findById(id);
+    if (!bus) {
+      return res.status(404).json({
+        success: false,
+        message: 'Bus not found'
+      });
+    }
+    
+    // Unassign bus from all students
+    await User.updateMany(
+      { busAssigned: bus._id },
+      { $unset: { busAssigned: '' } }
+    );
+    
+    // Delete bus
+    await Bus.findByIdAndDelete(id);
+    
+    res.json({
+      success: true,
+      message: 'Bus deleted successfully'
+    });
+    
+  } catch (error) {
+    console.error('Delete bus error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error deleting bus: ' + error.message
+    });
+  }
+};
+
+// Real-time Monitoring
+exports.monitor = async (req, res) => {
+  try {
+    const buses = await Bus.find()
+      .populate('driverId', 'name email')
+      .populate('students', 'name');
+    
+    res.render('admin/monitor', {
+      title: 'Real-time Monitoring',
+      user: req.session,
+      buses: JSON.stringify(buses)
+    });
+  } catch (error) {
+    console.error('Monitor error:', error);
+    res.status(500).render('error', {
+      message: 'Error loading monitoring',
+      error: error.message
+    });
+  }
+};
+
+// Get available drivers (for dropdown)
+exports.getAvailableDrivers = async (req, res) => {
+  try {
+    const drivers = await User.find({ role: 'driver' })
+      .select('name email')
+      .sort({ name: 1 });
+    
+    res.json({
+      success: true,
+      drivers
+    });
+  } catch (error) {
+    console.error('Get drivers error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error loading drivers'
+    });
+  }
+};
+
+// Get available buses (for dropdown)
+exports.getAvailableBuses = async (req, res) => {
+  try {
+    const buses = await Bus.find()
+      .select('busNumber routeName')
+      .sort({ busNumber: 1 });
+    
+    res.json({
+      success: true,
+      buses
+    });
+  } catch (error) {
+    console.error('Get buses dropdown error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error loading buses'
+    });
+  }
+};
+
+// Bulk import users (simple version)
+exports.bulkImport = async (req, res) => {
+  try {
+    const { users } = req.body; // Array of user objects
+    
+    if (!Array.isArray(users) || users.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No users provided'
+      });
+    }
+    
+    const results = [];
+    const errors = [];
+    
+    for (const userData of users) {
+      try {
+        // Create user
+        const user = new User({
+          ...userData,
+          password: await bcrypt.hash(userData.password || 'password123', 10)
+        });
+        
+        await user.save();
+        results.push({
+          email: user.email,
+          name: user.name,
+          role: user.role,
+          status: 'success'
+        });
+      } catch (error) {
+        errors.push({
+          email: userData.email,
+          error: error.message
+        });
+      }
+    }
+    
+    res.json({
+      success: true,
+      message: `Imported ${results.length} users successfully`,
+      results,
+      errors: errors.length > 0 ? errors : undefined
+    });
+    
+  } catch (error) {
+    console.error('Bulk import error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error during bulk import: ' + error.message
+    });
+  }
+};
+
+// API: Get single user
+exports.getUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const user = await User.findById(id).select('-password');
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+    
+    res.json({
+      success: true,
+      user
+    });
+  } catch (error) {
+    console.error('Get user error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching user'
+    });
+  }
+};
+
+// API: Get single bus
+exports.getBus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const bus = await Bus.findById(id)
+      .populate('driverId', 'name email')
+      .populate('students', 'name email');
+    
+    if (!bus) {
+      return res.status(404).json({
+        success: false,
+        message: 'Bus not found'
+      });
+    }
+    
+    res.json({
+      success: true,
+      bus
+    });
+  } catch (error) {
+    console.error('Get bus error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching bus'
+    });
+  }
+};
+
+// API: Update bus location
+exports.updateBusLocation = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { latitude, longitude, speed, status } = req.body;
+    
+    const bus = await Bus.findById(id);
+    if (!bus) {
+      return res.status(404).json({
+        success: false,
+        message: 'Bus not found'
+      });
+    }
+    
+    bus.latitude = parseFloat(latitude);
+    bus.longitude = parseFloat(longitude);
+    bus.speed = speed || 0;
+    bus.status = status || 'moving';
+    bus.updatedAt = new Date();
+    
+    await bus.save();
+    
+    // Broadcast to all connected clients
+    const io = req.app.get('io');
+    io.emit('bus-update', bus);
+    
+    res.json({
+      success: true,
+      message: 'Bus location updated',
+      bus
+    });
+  } catch (error) {
+    console.error('Update bus location error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating bus location'
+    });
+  }
+};
+
+// API: Get live bus data
+exports.getLiveBuses = async (req, res) => {
+  try {
+    const buses = await Bus.find()
+      .populate('driverId', 'name email')
+      .populate('students', 'name email');
+    
+    res.json(buses);
+  } catch (error) {
+    console.error('Get live buses error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching live bus data'
+    });
+  }
+};
+
+// API: Get analytics data
+exports.getAnalytics = async (req, res) => {
+  try {
+    // Last 7 days data
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    
+    // User registration stats
+    const userStats = await User.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: sevenDaysAgo }
+        }
+      },
+      {
+        $group: {
+          _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $sort: { _id: 1 }
+      }
+    ]);
+    
+    // Bus update stats
+    const busStats = await Bus.aggregate([
+      {
+        $match: {
+          updatedAt: { $gte: sevenDaysAgo }
+        }
+      },
+      {
+        $group: {
+          _id: { $dateToString: { format: "%Y-%m-%d", date: "$updatedAt" } },
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $sort: { _id: 1 }
+      }
+    ]);
+    
+    res.json({
+      success: true,
+      userStats,
+      busStats,
+      labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+    });
+  } catch (error) {
+    console.error('Analytics error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching analytics'
+    });
+  }
+};
+
+// API: Export data
+exports.exportData = async (req, res) => {
+  try {
+    const { type } = req.params;
+    const { format } = req.query;
+    
+    if (type === 'users') {
+      const users = await User.find().select('-password');
+      
+      if (format === 'csv') {
+        // Convert to CSV
+        const csv = users.map(user => 
+          `${user.name},${user.email},${user.role},${user.studentId || ''},${user.phone || ''},${user.createdAt}`
+        ).join('\n');
+        
+        res.header('Content-Type', 'text/csv');
+        res.attachment('users.csv');
+        return res.send('Name,Email,Role,Student ID,Phone,Created At\n' + csv);
+      } else {
+        res.json({
+          success: true,
+          users
+        });
+      }
+    } else if (type === 'buses') {
+      const buses = await Bus.find()
+        .populate('driverId', 'name email')
+        .populate('students', 'name email');
+      
+      if (format === 'csv') {
+        // Convert to CSV
+        const csv = buses.map(bus => 
+          `${bus.busNumber},${bus.busId},${bus.routeName || ''},${bus.driverName || ''},${bus.status},${bus.latitude || ''},${bus.longitude || ''},${bus.updatedAt}`
+        ).join('\n');
+        
+        res.header('Content-Type', 'text/csv');
+        res.attachment('buses.csv');
+        return res.send('Bus Number,Bus ID,Route,Driver,Status,Latitude,Longitude,Last Updated\n' + csv);
+      } else {
+        res.json({
+          success: true,
+          buses
+        });
+      }
+    } else {
+      res.status(400).json({
+        success: false,
+        message: 'Invalid export type'
+      });
+    }
+  } catch (error) {
+    console.error('Export error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error exporting data'
+    });
+  }
+};
+
+============================================================
+FILE: controllers/authController.js
+============================================================
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Track Your Bus</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Inter', -apple-system, sans-serif;
+    }
+    
+    :root {
+      --primary: #1e293b;
+      --accent: #2563eb;
+      --surface: #ffffff;
+      --bg: #f8fafc;
+      --border: #e2e8f0;
+      --text: #1e293b;
+      --text-muted: #64748b;
+      --radius: 12px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      padding-bottom: 20px;
+    }
+
+    .header {
+      background: var(--surface);
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .header h1 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .main-container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 15px;
+      display: grid;
+      gap: 12px;
+    }
+
+    /* Map Styling */
+    .map-wrapper {
+      position: relative;
+      border-radius: var(--radius);
+      overflow: hidden;
+      border: 1px solid var(--border);
+      height: 400px;
+      background: #eee;
+    }
+
+    .map-wrapper.fullscreen {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      height: 100vh;
+      z-index: 9999;
+      border-radius: 0;
+    }
+
+    #map { height: 100%; width: 100%; z-index: 1; }
+
+    /* Map Overlays */
+    .map-controls {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .ctrl-btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      width: 38px; height: 38px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: var(--text);
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+
+    /* Show Path Button - Positioned below map */
+    .btn-path {
+      width: 100%;
+      background: var(--accent);
+      color: white;
+      border: none;
+      padding: 14px;
+      border-radius: var(--radius);
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+
+    .btn-path:active { opacity: 0.9; }
+
+    /* Info Cards */
+    .card {
+      background: var(--surface);
+      padding: 20px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+    }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+
+    .info-item {
+      padding: 12px;
+      background: #f1f5f9;
+      border-radius: 8px;
+    }
+
+    .info-label { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.02em; margin-bottom: 4px; }
+    .info-val { font-size: 0.95rem; font-weight: 600; color: var(--text); }
+
+    /* ETA Section */
+    .eta-box {
+      text-align: center;
+      padding: 12px;
+    }
+
+    .eta-val { font-size: 1.8rem; font-weight: 800; color: var(--accent); }
+
+    /* Action Buttons */
+    .btn-group {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .btn-secondary {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 12px;
+      border-radius: 8px;
+      font-weight: 500;
+      font-size: 0.9rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    @media (max-width: 480px) {
+        .map-wrapper { height: 320px; }
+        .info-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h1><i class="fas fa-bus-simple"></i> Bus Tracker</h1>
+    <div style="font-size: 0.75rem; color: #10b981; font-weight: 700; background: #ecfdf5; padding: 4px 10px; border-radius: 20px;">
+       <i class="fas fa-satellite-dish"></i> LIVE
+    </div>
+  </div>
+
+  <div class="main-container">
+    <% if (bus) { %>
+      
+      <div class="map-wrapper" id="mapWrapper">
+        <div id="map"></div>
+        <div class="map-controls">
+          <button class="ctrl-btn" onclick="toggleFullScreen()" title="Full Screen">
+            <i class="fas fa-expand" id="fsIcon"></i>
+          </button>
+          <button class="ctrl-btn" onclick="locateBus()"><i class="fas fa-bus"></i></button>
+          <button class="ctrl-btn" onclick="locateStudent()"><i class="fas fa-location-crosshairs"></i></button>
+        </div>
+      </div>
+
+      <button class="btn-path" onclick="toggleRoutePath()" id="togglePathBtn">
+          <i class="fas fa-route"></i> <span id="path-text">Show Route Path</span>
+      </button>
+
+      <div class="card">
+        <div class="info-grid">
+          <div class="info-item">
+            <p class="info-label">Bus Number</p>
+            <p class="info-val"><%= bus.busNumber %></p>
+          </div>
+          <div class="info-item">
+            <p class="info-label">Route Name</p>
+            <p class="info-val"><%= bus.routeName || 'N/A' %></p>
+          </div>
+          <div class="info-item">
+            <p class="info-label">Current Status</p>
+            <p class="info-val" style="text-transform: capitalize;"><%= bus.status || 'Active' %></p>
+          </div>
+          <div class="info-item">
+            <p class="info-label">Driver Name</p>
+            <p class="info-val"><%= bus.driverName || 'N/A' %></p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card eta-box">
+        <p class="info-label">Estimated Arrival</p>
+        <div class="eta-val" id="eta-time">-- mins</div>
+      </div>
+
+      <div class="btn-group">
+        <button class="btn-secondary" onclick="location.reload()"><i class="fas fa-rotate"></i> Refresh</button>
+        <button class="btn-secondary" onclick="reportIssue()" style="color: #dc2626; border-color: #fee2e2;"><i class="fas fa-circle-exclamation"></i> Report</button>
+      </div>
+
+      <input type="hidden" id="bus-id" value="<%= bus.busId %>">
+      <div id="bus-data" data-lat="<%= bus.latitude %>" data-lng="<%= bus.longitude %>" style="display:none;"></div>
+
+    <% } else { %>
+      <div class="card" style="text-align:center; padding: 60px 20px;">
+        <i class="fas fa-bus-slash" style="font-size: 3rem; color: #cbd5e1; margin-bottom: 20px;"></i>
+        <h3>No Assigned Bus</h3>
+        <p style="color: var(--text-muted); margin-top: 10px;">Contact the AIDS Department for assistance.</p>
+      </div>
+    <% } %>
+  </div>
+
+  <script>
+    let map, busMarker, studentMarker, routeLine;
+    let busData = {};
+    let studentPosition = null;
+    let routePathVisible = false;
+
+    document.addEventListener('DOMContentLoaded', function() {
+      const el = document.getElementById('bus-data');
+      if (el) {
+        busData = { lat: parseFloat(el.dataset.lat), lng: parseFloat(el.dataset.lng) };
+        
+        map = L.map('map', { zoomControl: false }).setView([busData.lat, busData.lng], 15);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+        busMarker = L.marker([busData.lat, busData.lng], {
+            icon: L.divIcon({
+                html: '<div style="background:#2563eb; color:white; width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; border:3px solid white; box-shadow:0 2px 6px rgba(0,0,0,0.2);"><i class="fas fa-bus" style="font-size:14px;"></i></div>',
+                className: '', iconSize: [34, 34]
+            })
+        }).addTo(map);
+
+        getUserLocation();
+        setupLiveTracking();
+      }
+    });
+
+    function toggleFullScreen() {
+      const wrapper = document.getElementById('mapWrapper');
+      const icon = document.getElementById('fsIcon');
+      wrapper.classList.toggle('fullscreen');
+      icon.classList.toggle('fa-expand');
+      icon.classList.toggle('fa-compress');
+      setTimeout(() => map.invalidateSize(), 400);
+    }
+
+    function getUserLocation() {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(pos => {
+          studentPosition = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          studentMarker = L.circleMarker([studentPosition.lat, studentPosition.lng], {
+            radius: 7, color: '#fff', weight: 2, opacity: 1, fillOpacity: 1, fillColor: '#10b981'
+          }).addTo(map);
+          updateETA();
+        }, null, { enableHighAccuracy: true });
+      }
+    }
+
+    function locateBus() { map.panTo(busMarker.getLatLng()); busMarker.openPopup(); }
+    function locateStudent() { if(studentPosition) map.panTo([studentPosition.lat, studentPosition.lng]); }
+
+    function toggleRoutePath() {
+      const text = document.getElementById('path-text');
+      if (!routePathVisible && studentPosition) {
+        routeLine = L.polyline([busMarker.getLatLng(), [studentPosition.lat, studentPosition.lng]], {
+          color: '#2563eb', weight: 4, dashArray: '10, 10', opacity: 0.6
+        }).addTo(map);
+        text.innerText = "Hide Route Path";
+        routePathVisible = true;
+        map.fitBounds(routeLine.getBounds(), { padding: [50, 50] });
+      } else if (routeLine) {
+        map.removeLayer(routeLine);
+        text.innerText = "Show Route Path";
+        routePathVisible = false;
+      }
+    }
+
+    function updateETA() {
+        if (!studentPosition) return;
+        const dist = map.distance(busMarker.getLatLng(), [studentPosition.lat, studentPosition.lng]);
+        const mins = Math.round((dist / 1000) / 0.4); // Approx 25km/h city speed
+        document.getElementById('eta-time').innerText = mins > 0 ? mins + " mins" : "Arriving Now";
+    }
+
+    function reportIssue() {
+        const msg = prompt("Describe the issue:");
+        if(msg) alert("Issue reported to AIDS Department. Thank you.");
+    }
+
+    function setupLiveTracking() {
+        const socket = io();
+        const busId = document.getElementById('bus-id')?.value;
+        if (!busId) return;
+        socket.on('connect', () => socket.emit('join-bus-room', busId));
+        socket.on('bus-location-update', (data) => {
+            if (data.latitude && data.longitude) {
+                const newPos = [data.latitude, data.longitude];
+                busMarker.setLatLng(newPos);
+                if (routePathVisible && routeLine) routeLine.setLatLngs([newPos, [studentPosition.lat, studentPosition.lng]]);
+                updateETA();
+            }
+        });
+    }
+  </script>
+</body>
+</html>
+
+
+============================================================
+FILE: controllers/busController.js
+============================================================
+
+const Bus = require('../models/Bus');
+
+exports.dashboard = async (req, res) => {
+  try {
+    // Get all buses to show on initial load
+    const buses = await Bus.find().sort({ updatedAt: -1 });
+    
+    // Pass buses to the template
+    res.render('student/dashboard', { 
+      buses: buses 
+    });
+    
+  } catch (error) {
+    console.error("Dashboard error:", error);
+    res.status(500).send("Error loading student dashboard");
+  }
+};
+
+exports.getLocation = async (req, res) => {
+  try {
+    const buses = await Bus.find();
+    
+    const data = buses.map(bus => ({
+      busId: bus._id,
+      busNumber: bus.busNumber,
+      routeName: bus.routeName,
+      lat: bus.latitude,
+      lng: bus.longitude,
+      updatedAt: bus.updatedAt
+    }));
+    
+    res.json(data);
+  } catch (error) {
+    console.error("Get location error:", error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+============================================================
+FILE: controllers/driverController.js
+============================================================
+
+// server/controllers/driverController.js
+const Bus = require('../models/Bus');
+const User = require('../models/User');
+
+// Get driver dashboard data
+exports.dashboard = async (req, res) => {
+  try {
+    if (!req.session || !req.session.userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Not authenticated'
+      });
+    }
+    
+    const user = await User.findById(req.session.userId);
+    if (!user || user.role !== 'driver') {
+      return res.status(403).json({
+        success: false,
+        message: 'Driver privileges required'
+      });
+    }
+    
+    const bus = await Bus.findOne({ driverId: user._id })
+      .populate('students', 'name email studentId')
+      .lean();
+    
+    res.json({
+      success: true,
+      driver: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone
+      },
+      bus: bus || null
+    });
+    
+  } catch (error) {
+    console.error("Dashboard Error:", error);
+    res.status(500).json({
+      success: false,
+      message: 'Error loading dashboard'
+    });
+  }
+};
+
+// Handle live location updates
+exports.updateLiveLocation = async (req, res) => {
+  try {
+    const { latitude, longitude, speed, status, accuracy, updateStatusOnly } = req.body;
+    
+    // Validate session
+    if (!req.session?.userId) {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Not authenticated' 
+      });
+    }
+    
+    // Get driver
+    const user = await User.findById(req.session.userId);
+    if (!user) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'User not found' 
+      });
+    }
+    
+    // Get driver's bus
+    const bus = await Bus.findOne({ driverId: user._id });
+    if (!bus) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'No bus assigned' 
+      });
+    }
+    
+    // Prepare update
+    const updateData = {
+      updatedAt: new Date()
+    };
+    
+    if (!updateStatusOnly) {
+      if (latitude !== undefined) updateData.latitude = parseFloat(latitude);
+      if (longitude !== undefined) updateData.longitude = parseFloat(longitude);
+      if (speed !== undefined) updateData.speed = parseFloat(speed);
+      if (accuracy !== undefined) updateData.accuracy = parseFloat(accuracy);
+    }
+    
+    if (status) {
+      updateData.status = status;
+    }
+    
+    // Update bus
+    const updatedBus = await Bus.findByIdAndUpdate(
+      bus._id,
+      updateData,
+      { new: true }
+    ).populate('students');
+    
+    // Broadcast via WebSocket
+    const io = req.app.get('io');
+    
+    // Send to bus room
+    io.to(`bus-${bus._id}`).emit('bus-live-update', {
+      busId: bus._id,
+      busNumber: bus.busNumber,
+      latitude: updateData.latitude,
+      longitude: updateData.longitude,
+      speed: updateData.speed,
+      status: updateData.status,
+      timestamp: updateData.updatedAt
+    });
+    
+    // Update tracking count
+    const studentCount = updatedBus.students?.length || 0;
+    io.to(`bus-${bus._id}`).emit('tracking-count', {
+      busId: bus._id,
+      count: studentCount
+    });
+    
+    res.json({
+      success: true,
+      message: 'Location updated',
+      trackingCount: studentCount,
+      timestamp: new Date()
+    });
+    
+  } catch (error) {
+    console.error('Update error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: error.message 
+    });
+  }
+};
+
+============================================================
+FILE: controllers/studentController.js
+============================================================
+
+const Bus = require('../models/Bus');
+const User = require('../models/User');
+const routeCalculator = require('../utils/routeCalculator'); // Add this
+
+exports.dashboard = async (req, res) => {
+  try {
+    // Populate the assigned bus and nested driver details
+    const user = await User.findById(req.session.userId).populate({
+      path: 'busAssigned',
+      populate: { path: 'driverId', select: 'phone email name' } // Fetch driver phone
+    });
+    
+    if (!user.busAssigned) {
+      return res.render('student/dashboard', { 
+        bus: null,
+        student: user, // Pass student data for the sidebar
+        message: 'No bus assigned to you yet. Please contact the AIDS department.'
+      });
+    }
+    
+    res.render('student/dashboard', { 
+      bus: user.busAssigned,
+      student: user // Ensure dynamic user info is passed
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("Error loading student dashboard");
+  }
+};
+
+
+
+exports.getMyBusLocation = async (req, res) => {
+  try {
+    const user = await User.findById(req.session.userId).populate('busAssigned');
+    
+    if (!user.busAssigned) {
+      return res.status(404).json({ 
+        error: 'No bus assigned' 
+      });
+    }
+    
+    const bus = await Bus.findById(user.busAssigned._id);
+    
+    res.json({
+      busId: bus.busId,
+      busNumber: bus.busNumber,
+      routeName: bus.routeName,
+      driverName: bus.driverName,
+      latitude: bus.latitude,
+      longitude: bus.longitude,
+      status: bus.status,
+      updatedAt: bus.updatedAt
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// NEW: Get route information between student and bus
+exports.getRouteInfo = async (req, res) => {
+  try {
+    const { studentLat, studentLng, busLat, busLng } = req.query;
+    
+    if (!studentLat || !studentLng || !busLat || !busLng) {
+      return res.status(400).json({ error: 'Missing coordinates' });
+    }
+    
+    const route = await routeCalculator.calculateRoute(
+      { lat: parseFloat(studentLat), lng: parseFloat(studentLng) },
+      { lat: parseFloat(busLat), lng: parseFloat(busLng) }
+    );
+    
+    res.json(route);
+    
+  } catch (error) {
+    console.error('Route info error:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+============================================================
+FILE: middleware/authMiddleware.js
+============================================================
+
+// middleware/authMiddleware.js
+
+// Check if user is authenticated
+exports.isAuthenticated = (req, res, next) => {
+  if (!req.session.userId) {
+    return res.redirect('/login');
+  }
+  next();
+};
+
+// Check if user is admin
+exports.isAdmin = (req, res, next) => {
+  if (!req.session.userId) {
+    return res.redirect('/login');
+  }
+  
+  if (req.session.role !== 'admin') {
+    return res.status(403).render('error', {
+      message: 'Access Denied',
+      error: 'Admin privileges required'
+    });
+  }
+  
+  next();
+};
+
+// Check if user is driver
+exports.isDriver = (req, res, next) => {
+  if (!req.session.userId) {
+    return res.redirect('/login');
+  }
+  
+  if (req.session.role !== 'driver') {
+    return res.status(403).render('error', {
+      message: 'Access Denied',
+      error: 'Driver privileges required'
+    });
+  }
+  
+  next();
+};
+
+// Check if user is student
+exports.isStudent = (req, res, next) => {
+  if (!req.session.userId) {
+    return res.redirect('/login');
+  }
+  
+  if (req.session.role !== 'student') {
+    return res.status(403).render('error', {
+      message: 'Access Denied',
+      error: 'Student privileges required'
+    });
+  }
+  
+  next();
+};
+
+// Get current user's bus assignment
+exports.getStudentBus = async (req, res, next) => {
+  try {
+    if (req.session.role === 'student') {
+      const User = require('../models/User');
+      const user = await User.findById(req.session.userId).populate('busAssigned');
+      if (user) {
+        req.busAssigned = user.busAssigned;
+      }
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
+
+============================================================
+FILE: middleware/websocketMiddleware.js
+============================================================
+
+// middleware/websocketMiddleware.js
+
+const rateLimit = require('express-rate-limit');
+
+// Rate limiting for live updates (prevent abuse)
+const liveUpdateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 1000, // Limit each IP to 1000 requests per windowMs
+  message: {
+    success: false,
+    message: 'Too many location updates, please try again later'
+  }
+});
+
+// WebSocket connection manager
+class WebSocketManager {
+  constructor(io) {
+    this.io = io;
+    this.activeDrivers = new Map();
+    this.activeStudents = new Map();
+  }
+
+  // Add driver to active list
+  addDriver(driverId, socketId, busId) {
+    this.activeDrivers.set(driverId, {
+      socketId,
+      busId,
+      lastUpdate: new Date(),
+      updateCount: 0
+    });
+    
+    this.io.emit('driver-status', {
+      driverId,
+      status: 'online',
+      timestamp: new Date()
+    });
+  }
+
+  // Remove driver
+  removeDriver(driverId) {
+    this.activeDrivers.delete(driverId);
+    
+    this.io.emit('driver-status', {
+      driverId,
+      status: 'offline',
+      timestamp: new Date()
+    });
+  }
+
+  // Get active drivers
+  getActiveDrivers() {
+    return Array.from(this.activeDrivers.entries());
+  }
+}
+
+module.exports = {
+  liveUpdateLimiter,
+  WebSocketManager
+};
+
+============================================================
+FILE: models/Bus.js
+============================================================
+
+const mongoose = require('mongoose');
+
+const busSchema = new mongoose.Schema({
+  busId: { 
+    type: String, 
+    unique: true, 
+    required: true 
+  },
+  busNumber: { 
+    type: String, 
+    required: true 
+  },
+  routeName: String,
+  driverName: String,
+  driverId: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'User' 
+  },
+  capacity: Number,
+  currentPassengers: { type: Number, default: 0 },
+  latitude: Number,
+  longitude: Number,
+  speed: { type: Number, default: 0 },
+  status: { 
+    type: String, 
+    enum: ['moving', 'stopped', 'delayed', 'offline'],
+    default: 'moving' 
+  },
+  students: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
+  updatedAt: { type: Date, default: Date.now }
+});
+
+module.exports = mongoose.model('Bus', busSchema);
+
+============================================================
+FILE: models/User.js
+============================================================
+
+const mongoose = require('mongoose');
+
+const userSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  email: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+  role: { 
+    type: String, 
+    enum: ['student', 'driver', 'admin'], 
+    default: 'student' 
+  },
+  studentId: { 
+    type: String, 
+    unique: true, 
+    sparse: true
+  },
+  phone: String,
+  busAssigned: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'Bus' 
+  },
+  createdAt: { type: Date, default: Date.now }
+});
+
+module.exports = mongoose.model('User', userSchema);
+
+============================================================
+FILE: package.json
+============================================================
+
+{
+  "name": "bus-tracking-system",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "axios": "^1.13.2",
+    "bcrypt": "^6.0.0",
+    "bcryptjs": "^3.0.3",
+    "connect-mongo": "^6.0.0",
+    "dotenv": "^17.2.3",
+    "ejs": "^4.0.1",
+    "express": "^5.2.1",
+    "express-session": "^1.18.2",
+    "geolib": "^3.3.4",
+    "mongodb-memory-server": "^11.0.1",
+    "mongoose": "^9.1.4",
+    "socket.io": "^4.8.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.11"
+  }
+}
+
+
+============================================================
+FILE: public/css/admin.css
+============================================================
+
+/* public/css/admin.css */
+:root {
+    --primary: #3498db;
+    --secondary: #2c3e50;
+    --success: #27ae60;
+    --warning: #f39c12;
+    --danger: #e74c3c;
+    --light: #ecf0f1;
+    --dark: #2c3e50;
+    --info: #17a2b8;
+}
+
+/* Admin Table Styles */
+.admin-table {
+    width: 100%;
+    background: white;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    margin-bottom: 20px;
+}
+
+.admin-table table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.admin-table thead {
+    background: var(--secondary);
+    color: white;
+}
+
+.admin-table th {
+    padding: 15px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.admin-table tbody tr {
+    border-bottom: 1px solid #eee;
+    transition: background 0.3s;
+}
+
+.admin-table tbody tr:hover {
+    background: #f8f9fa;
+}
+
+.admin-table td {
+    padding: 15px;
+    color: #555;
+}
+
+/* Action Buttons */
+.action-btns {
+    display: flex;
+    gap: 8px;
+}
+
+.btn-icon {
+    width: 35px;
+    height: 35px;
+    border-radius: 5px;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s;
+    font-size: 0.9rem;
+}
+
+.btn-icon:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 3px 10px rgba(0,0,0,0.2);
+}
+
+.btn-edit {
+    background: var(--warning);
+    color: white;
+}
+
+.btn-delete {
+    background: var(--danger);
+    color: white;
+}
+
+.btn-view {
+    background: var(--info);
+    color: white;
+}
+
+/* Form Styles */
+.admin-form {
+    background: white;
+    padding: 30px;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 500;
+    color: var(--dark);
+}
+
+.form-control {
+    width: 100%;
+    padding: 12px 15px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    font-size: 1rem;
+    transition: border-color 0.3s;
+}
+
+.form-control:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+}
+
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+
+@media (max-width: 768px) {
+    .form-row {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Status Badges */
+.badge {
+    display: inline-block;
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    text-transform: uppercase;
+}
+
+.badge-success {
+    background: #d4edda;
+    color: #155724;
+}
+
+.badge-warning {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.badge-danger {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.badge-info {
+    background: #d1ecf1;
+    color: #0c5460;
+}
+
+/* Search and Filter */
+.filter-bar {
+    background: white;
+    padding: 20px;
+    border-radius: 10px;
+    margin-bottom: 20px;
+    display: flex;
+    gap: 15px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.search-box {
+    flex: 1;
+    min-width: 250px;
+}
+
+.search-box input {
+    width: 100%;
+    padding: 10px 15px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    font-size: 0.9rem;
+}
+
+.filter-select {
+    padding: 10px 15px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    background: white;
+    min-width: 150px;
+}
+
+/* Pagination */
+.pagination {
+    display: flex;
+    justify-content: center;
+    gap: 5px;
+    margin-top: 30px;
+}
+
+.page-item {
+    list-style: none;
+}
+
+.page-link {
+    display: block;
+    padding: 8px 15px;
+    background: white;
+    border: 1px solid #ddd;
+    color: var(--primary);
+    text-decoration: none;
+    border-radius: 5px;
+    transition: all 0.3s;
+}
+
+.page-link:hover {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+}
+
+.page-active .page-link {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+}
+
+/* Alert Messages */
+.alert {
+    padding: 15px;
+    border-radius: 5px;
+    margin-bottom: 20px;
+    border-left: 4px solid;
+}
+
+.alert-success {
+    background: #d4edda;
+    border-color: #c3e6cb;
+    color: #155724;
+}
+
+.alert-danger {
+    background: #f8d7da;
+    border-color: #f5c6cb;
+    color: #721c24;
+}
+
+.alert-info {
+    background: #d1ecf1;
+    border-color: #bee5eb;
+    color: #0c5460;
+}
+
+.alert-warning {
+    background: #fff3cd;
+    border-color: #ffeeba;
+    color: #856404;
+}
+
+/* Empty State */
+.empty-state {
+    text-align: center;
+    padding: 50px 20px;
+    color: #7f8c8d;
+}
+
+.empty-state i {
+    font-size: 3rem;
+    margin-bottom: 15px;
+    color: #bdc3c7;
+}
+
+.empty-state h3 {
+    margin-bottom: 10px;
+    color: var(--secondary);
+}
+
+/* Modal Styles */
+.modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    z-index: 1000;
+    justify-content: center;
+    align-items: center;
+}
+
+.modal-content {
+    background: white;
+    border-radius: 10px;
+    max-width: 500px;
+    width: 90%;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+.modal-header {
+    padding: 20px;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-header h3 {
+    margin: 0;
+    color: var(--secondary);
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: #7f8c8d;
+}
+
+.modal-body {
+    padding: 20px;
+}
+
+.modal-footer {
+    padding: 20px;
+    border-top: 1px solid #eee;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+/* Utility Classes */
+.text-center { text-align: center; }
+.text-right { text-align: right; }
+.text-left { text-align: left; }
+.mt-20 { margin-top: 20px; }
+.mb-20 { margin-bottom: 20px; }
+.mt-30 { margin-top: 30px; }
+.mb-30 { margin-bottom: 30px; }
+.d-flex { display: flex; }
+.align-center { align-items: center; }
+.justify-between { justify-content: space-between; }
+.gap-10 { gap: 10px; }
+.gap-20 { gap: 20px; }
+.flex-wrap { flex-wrap: wrap; }
+.w-100 { width: 100%; }
+
+/* Responsive Tables */
+@media (max-width: 768px) {
+    .admin-table {
+        overflow-x: auto;
+    }
+    
+    .admin-table table {
+        min-width: 600px;
+    }
+    
+    .action-btns {
+        flex-direction: column;
+        gap: 5px;
+    }
+    
+    .btn-icon {
+        width: 100%;
+        justify-content: center;
+    }
+}
+
+============================================================
+FILE: public/css/style.css
+============================================================
+
+/* Driver Dashboard Styles */
+.driver-marker {
+  background: #3498db;
+  color: white;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+  border: 3px solid white;
+}
+
+.bus-marker {
+  background: #f39c12;
+  color: white;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+  border: 3px solid white;
+}
+
+.accuracy-circle {
+  fill-opacity: 0.1;
+  stroke-opacity: 0.5;
+}
+
+/* Tracking Controls */
+.tracking-controls {
+  display: flex;
+  gap: 10px;
+  margin: 15px 0;
+}
+
+.tracking-btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.3s;
+}
+
+.tracking-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Location Info Cards */
+.location-card {
+  background: white;
+  padding: 15px;
+  border-radius: 8px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+  margin-bottom: 10px;
+}
+
+.location-card h4 {
+  margin: 0 0 10px 0;
+  color: #2c3e50;
+  font-size: 0.9rem;
+}
+
+.location-card .value {
+  font-size: 1.2rem;
+  font-weight: bold;
+  color: #3498db;
+}
+
+.location-card .label {
+  font-size: 0.8rem;
+  color: #7f8c8d;
+}
+
+============================================================
+FILE: public/js/admin.js
+============================================================
+
+// public/js/admin.js
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize all admin functionality
+    
+    // Initialize modals
+    initModals();
+    
+    // Initialize delete confirmations
+    initDeleteConfirmations();
+    
+    // Initialize form validations
+    initFormValidations();
+    
+    // Initialize filters
+    initFilters();
+    
+    // Initialize real-time updates
+    initRealTimeUpdates();
+    
+    // Initialize charts if on dashboard
+    if (document.getElementById('usageChart')) {
+        initDashboardCharts();
+    }
+    
+    // Initialize map if on monitor page
+    if (document.getElementById('adminMap')) {
+        initAdminMap();
+    }
+});
+
+// Modal Management
+function initModals() {
+    // Close modals when clicking X or outside
+    document.querySelectorAll('.modal-close, .modal').forEach(element => {
+        element.addEventListener('click', function(e) {
+            if (e.target.classList.contains('modal') || e.target.classList.contains('modal-close')) {
+                closeModal(e.target.closest('.modal'));
+            }
+        });
+    });
+    
+    // Open user modal
+    document.querySelectorAll('.open-user-modal').forEach(button => {
+        button.addEventListener('click', function() {
+            const userId = this.dataset.userId;
+            openUserModal(userId);
+        });
+    });
+    
+    // Open bus modal
+    document.querySelectorAll('.open-bus-modal').forEach(button => {
+        button.addEventListener('click', function() {
+            const busId = this.dataset.busId;
+            openBusModal(busId);
+        });
+    });
+}
+
+function openModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) {
+        modal.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+    }
+}
+
+function closeModal(modal) {
+    if (modal) {
+        modal.style.display = 'none';
+        document.body.style.overflow = 'auto';
+    }
+}
+
+// User Management
+function openUserModal(userId) {
+    if (userId) {
+        // Load user data via AJAX
+        fetch(`/admin/api/users/${userId}`)
+            .then(response => response.json())
+            .then(user => {
+                document.getElementById('modalUserName').textContent = user.name;
+                document.getElementById('modalUserEmail').textContent = user.email;
+                document.getElementById('modalUserRole').textContent = user.role;
+                document.getElementById('modalUserPhone').textContent = user.phone || 'N/A';
+                document.getElementById('modalUserStudentId').textContent = user.studentId || 'N/A';
+                document.getElementById('modalUserCreated').textContent = 
+                    new Date(user.createdAt).toLocaleDateString();
+                
+                // Set edit form values
+                document.getElementById('editUserId').value = user._id;
+                document.getElementById('editUserName').value = user.name;
+                document.getElementById('editUserEmail').value = user.email;
+                document.getElementById('editUserRole').value = user.role;
+                document.getElementById('editUserPhone').value = user.phone || '';
+                document.getElementById('editUserStudentId').value = user.studentId || '';
+                
+                openModal('userModal');
+            })
+            .catch(error => {
+                console.error('Error loading user:', error);
+                alert('Error loading user data');
+            });
+    } else {
+        // Clear form for new user
+        document.getElementById('userForm').reset();
+        document.getElementById('modalTitle').textContent = 'Add New User';
+        openModal('userModal');
+    }
+}
+
+// Bus Management
+function openBusModal(busId) {
+    if (busId) {
+        // Load bus data via AJAX
+        fetch(`/admin/api/buses/${busId}`)
+            .then(response => response.json())
+            .then(bus => {
+                document.getElementById('modalBusNumber').textContent = bus.busNumber;
+                document.getElementById('modalBusRoute').textContent = bus.routeName || 'N/A';
+                document.getElementById('modalBusDriver').textContent = bus.driverName || 'No driver';
+                document.getElementById('modalBusStatus').textContent = bus.status;
+                document.getElementById('modalBusCapacity').textContent = bus.capacity;
+                document.getElementById('modalBusLocation').textContent = 
+                    bus.latitude && bus.longitude ? 
+                    `${bus.latitude.toFixed(4)}, ${bus.longitude.toFixed(4)}` : 'N/A';
+                document.getElementById('modalBusUpdated').textContent = 
+                    new Date(bus.updatedAt).toLocaleString();
+                
+                // Set edit form values
+                document.getElementById('editBusId').value = bus._id;
+                document.getElementById('editBusNumber').value = bus.busNumber;
+                document.getElementById('editBusRoute').value = bus.routeName || '';
+                document.getElementById('editBusCapacity').value = bus.capacity || '';
+                document.getElementById('editBusStatus').value = bus.status;
+                
+                openModal('busModal');
+            })
+            .catch(error => {
+                console.error('Error loading bus:', error);
+                alert('Error loading bus data');
+            });
+    } else {
+        // Clear form for new bus
+        document.getElementById('busForm').reset();
+        document.getElementById('modalTitle').textContent = 'Add New Bus';
+        openModal('busModal');
+    }
+}
+
+// Delete Confirmations
+function initDeleteConfirmations() {
+    document.querySelectorAll('.delete-btn').forEach(button => {
+        button.addEventListener('click', function(e) {
+            e.preventDefault();
+            const type = this.dataset.type; // 'user' or 'bus'
+            const id = this.dataset.id;
+            const name = this.dataset.name;
+            
+            if (confirm(`Are you sure you want to delete ${type}: ${name}?`)) {
+                // Perform deletion via AJAX
+                fetch(`/admin/${type}s/${id}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert(`${type.charAt(0).toUpperCase() + type.slice(1)} deleted successfully`);
+                        location.reload();
+                    } else {
+                        alert('Error: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Delete error:', error);
+                    alert('Error deleting item');
+                });
+            }
+        });
+    });
+}
+
+// Form Validations
+function initFormValidations() {
+    const userForm = document.getElementById('userForm');
+    if (userForm) {
+        userForm.addEventListener('submit', function(e) {
+            const password = document.getElementById('userPassword').value;
+            const confirmPassword = document.getElementById('userConfirmPassword').value;
+            
+            if (password && password !== confirmPassword) {
+                e.preventDefault();
+                alert('Passwords do not match!');
+                return false;
+            }
+            
+            if (password && password.length < 6) {
+                e.preventDefault();
+                alert('Password must be at least 6 characters!');
+                return false;
+            }
+        });
+    }
+    
+    const busForm = document.getElementById('busForm');
+    if (busForm) {
+        busForm.addEventListener('submit', function(e) {
+            const busNumber = document.getElementById('busNumber').value;
+            if (!busNumber) {
+                e.preventDefault();
+                alert('Bus number is required!');
+                return false;
+            }
+        });
+    }
+}
+
+// Filter Management
+function initFilters() {
+    // Role filter
+    const roleFilter = document.getElementById('roleFilter');
+    if (roleFilter) {
+        roleFilter.addEventListener('change', function() {
+            filterUsers();
+        });
+    }
+    
+    // Status filter
+    const statusFilter = document.getElementById('statusFilter');
+    if (statusFilter) {
+        statusFilter.addEventListener('change', function() {
+            filterBuses();
+        });
+    }
+    
+    // Search functionality
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) {
+        searchInput.addEventListener('input', debounce(function() {
+            if (window.location.pathname.includes('/users')) {
+                filterUsers();
+            } else if (window.location.pathname.includes('/buses')) {
+                filterBuses();
+            }
+        }, 300));
+    }
+}
+
+function filterUsers() {
+    const role = document.getElementById('roleFilter')?.value || 'all';
+    const search = document.getElementById('searchInput')?.value || '';
+    
+    let url = `/admin/users?role=${role}`;
+    if (search) {
+        url += `&search=${encodeURIComponent(search)}`;
+    }
+    
+    window.location.href = url;
+}
+
+function filterBuses() {
+    const status = document.getElementById('statusFilter')?.value || 'all';
+    const search = document.getElementById('searchInput')?.value || '';
+    
+    let url = `/admin/buses?status=${status}`;
+    if (search) {
+        url += `&search=${encodeURIComponent(search)}`;
+    }
+    
+    window.location.href = url;
+}
+
+// Debounce function for search
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+// Real-time Updates
+function initRealTimeUpdates() {
+    const socket = io();
+    
+    // Listen for bus updates
+    socket.on('bus-update', function(busData) {
+        console.log('Real-time bus update:', busData);
+        
+        // Update bus status on dashboard
+        updateBusStatus(busData);
+        
+        // Update map marker if on monitor page
+        updateMapMarker(busData);
+    });
+    
+    // Listen for user activities
+    socket.on('user-activity', function(activity) {
+        console.log('User activity:', activity);
+        addActivityLog(activity);
+    });
+}
+
+function updateBusStatus(busData) {
+    // Update bus status in tables/lists
+    const busElement = document.querySelector(`[data-bus-id="${busData.busId}"]`);
+    if (busElement) {
+        const statusElement = busElement.querySelector('.bus-status');
+        if (statusElement) {
+            statusElement.textContent = busData.status;
+            statusElement.className = `bus-status status-${busData.status}`;
+        }
+    }
+}
+
+function updateMapMarker(busData) {
+    // This will be implemented in admin-map.js
+}
+
+function addActivityLog(activity) {
+    const activityList = document.querySelector('.activity-list');
+    if (activityList) {
+        const activityItem = document.createElement('div');
+        activityItem.className = 'activity-item';
+        activityItem.innerHTML = `
+            <div class="activity-icon ${activity.type}">
+                <i class="fas fa-${activity.icon}"></i>
+            </div>
+            <div class="activity-details">
+                <h4>${activity.title}</h4>
+                <p>${activity.description}</p>
+            </div>
+            <div class="activity-time">
+                Just now
+            </div>
+        `;
+        
+        // Add to top of list
+        activityList.insertBefore(activityItem, activityList.firstChild);
+        
+        // Limit list to 10 items
+        if (activityList.children.length > 10) {
+            activityList.removeChild(activityList.lastChild);
+        }
+    }
+}
+
+// Dashboard Charts
+function initDashboardCharts() {
+    const ctx = document.getElementById('usageChart').getContext('2d');
+    
+    // Fetch real data from API
+    fetch('/admin/api/analytics/usage')
+        .then(response => response.json())
+        .then(data => {
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.labels || ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+                    datasets: [{
+                        label: 'Active Users',
+                        data: data.activeUsers || [65, 59, 80, 81, 56, 55, 40],
+                        backgroundColor: 'rgba(52, 152, 219, 0.2)',
+                        borderColor: 'rgba(52, 152, 219, 1)',
+                        borderWidth: 2,
+                        tension: 0.4
+                    }, {
+                        label: 'Bus Updates',
+                        data: data.busUpdates || [28, 48, 40, 19, 86, 27, 90],
+                        backgroundColor: 'rgba(46, 204, 113, 0.2)',
+                        borderColor: 'rgba(46, 204, 113, 1)',
+                        borderWidth: 2,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                        },
+                        title: {
+                            display: true,
+                            text: 'Weekly Activity'
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: {
+                                drawBorder: false
+                            }
+                        },
+                        x: {
+                            grid: {
+                                display: false
+                            }
+                        }
+                    }
+                }
+            });
+        })
+        .catch(error => {
+            console.error('Error loading chart data:', error);
+        });
+}
+
+// Export functionality
+function exportData(type, format) {
+    let url = `/admin/api/export/${type}`;
+    if (format) {
+        url += `?format=${format}`;
+    }
+    
+    window.open(url, '_blank');
+}
+
+// Bulk operations
+function handleBulkOperation(operation) {
+    const checkboxes = document.querySelectorAll('.bulk-select:checked');
+    if (checkboxes.length === 0) {
+        alert('Please select items to perform bulk operation');
+        return;
+    }
+    
+    const ids = Array.from(checkboxes).map(cb => cb.value);
+    
+    if (operation === 'delete') {
+        if (!confirm(`Are you sure you want to delete ${ids.length} items?`)) {
+            return;
+        }
+    }
+    
+    fetch(`/admin/${operation}/bulk`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ ids })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert(`${data.message}. ${ids.length} items processed.`);
+            location.reload();
+        } else {
+            alert('Error: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Bulk operation error:', error);
+        alert('Error performing bulk operation');
+    });
+}
+
+// Select all checkboxes
+function selectAll(checkbox) {
+    document.querySelectorAll('.bulk-select').forEach(cb => {
+        cb.checked = checkbox.checked;
+    });
+}
+
+// Logout function
+function logout() {
+    if (confirm('Are you sure you want to logout?')) {
+        window.location.href = '/logout';
+    }
+}
+
+============================================================
+FILE: public/js/driver-live.js
+============================================================
+
+// public/js/driver-live.js
+let map, marker, watchId;
+
+function initDriverMap(lat, lng) {
+    map = L.map('driver-map').setView([lat, lng], 15);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    marker = L.marker([lat, lng]).addTo(map).bindPopup("You are here").openPopup();
+}
+
+function startTracking() {
+    if (!navigator.geolocation) return alert("Geolocation not supported");
+
+    document.getElementById('start-tracking').disabled = true;
+    document.getElementById('tracking-status').innerText = "📡 Tracking Active";
+    document.getElementById('tracking-status').className = "tracking-active";
+
+    // Watch position provides real-time updates whenever the driver moves
+    watchId = navigator.geolocation.watchPosition(
+        (position) => {
+            const { latitude, longitude, speed } = position.coords;
+            
+            // 1. Update Map
+            if (!map) {
+                initDriverMap(latitude, longitude);
+            } else {
+                const newPos = [latitude, longitude];
+                marker.setLatLng(newPos);
+                map.panTo(newPos);
+            }
+
+            // 2. Send to Server
+            fetch('/driver/update-location', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    latitude,
+                    longitude,
+                    speed: speed || 0,
+                    status: 'moving'
+                })
+            })
+            .then(res => res.json())
+            .catch(err => console.error("Update failed:", err));
+        },
+        (error) => console.error("Error watching position:", error),
+        { enableHighAccuracy: true }
+    );
+}
+
+document.getElementById('start-tracking').addEventListener('click', startTracking);
+
+
+============================================================
+FILE: public/js/driver.js
+============================================================
+
+
+
+============================================================
+FILE: public/js/map.js
+============================================================
+
+const map = L.map("map").setView([12.9716, 77.5946], 13);
+
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+
+// Fetch bus location
+fetch("/bus/location/BUS_01")
+  .then(res => res.json())
+  .then(bus => {
+    const busMarker = L.marker([bus.latitude, bus.longitude])
+      .addTo(map)
+      .bindPopup("Bus Location");
+
+    navigator.geolocation.getCurrentPosition(pos => {
+      const studentLat = pos.coords.latitude;
+      const studentLng = pos.coords.longitude;
+
+      const studentMarker = L.marker([studentLat, studentLng])
+        .addTo(map)
+        .bindPopup("You");
+
+      map.fitBounds([
+        [bus.latitude, bus.longitude],
+        [studentLat, studentLng]
+      ]);
+
+      calculateDistance(studentLat, studentLng, bus.latitude, bus.longitude);
+    });
+  });
+
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) *
+    Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) ** 2;
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const distance = R * c;
+
+  document.getElementById("distance").innerText =
+    `Bus is ${distance.toFixed(2)} km away`;
+}
+
+============================================================
+FILE: public/js/student-map.js
+============================================================
+
+console.log('🚌 student-map.js loaded');
+
+// Global variables
+let map = null;
+let busMarker = null;
+let studentMarker = null;
+let routeLine = null;
+let studentPosition = null;
+let busPosition = null;
+let isRouteVisible = true; // Track route visibility
+
+// Initialize when DOM is ready
+document.addEventListener('DOMContentLoaded', function() {
+  console.log('DOM fully loaded, initializing...');
+  
+  // Initialize map first
+  initializeMap();
+  
+  // Initialize tracking after a short delay
+  setTimeout(() => {
+    initTracking();
+  }, 500);
+});
+
+// Initialize the map
+function initializeMap() {
+  console.log('Initializing map...');
+  
+  // Get bus data from hidden div
+  const busDataElement = document.getElementById('bus-data');
+  if (!busDataElement) {
+    console.error('No bus-data element found!');
+    return;
+  }
+  
+  console.log('Bus data found:', {
+    lat: busDataElement.dataset.lat,
+    lng: busDataElement.dataset.lng,
+    busNumber: busDataElement.dataset.busNumber
+  });
+  
+  // Set initial center (default to India if no bus data)
+  let centerLat = 20.5937;
+  let centerLng = 78.9629;
+  
+  if (busDataElement.dataset.lat && busDataElement.dataset.lng) {
+    centerLat = parseFloat(busDataElement.dataset.lat);
+    centerLng = parseFloat(busDataElement.dataset.lng);
+  }
+  
+  console.log('Creating map at:', centerLat, centerLng);
+  
+  // Create the map
+  map = L.map('map').setView([centerLat, centerLng], 13);
+  
+  // Add tile layer
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors'
+  }).addTo(map);
+  
+  console.log('✅ Map initialized successfully');
+}
+
+// Initialize tracking
+async function initTracking() {
+  console.log('Starting tracking...');
+  
+  // Get initial bus data
+  const busDataElement = document.getElementById('bus-data');
+  if (!busDataElement) {
+    console.error('Cannot start tracking: No bus data');
+    return;
+  }
+  
+  const busData = {
+    latitude: parseFloat(busDataElement.dataset.lat) || 0,
+    longitude: parseFloat(busDataElement.dataset.lng) || 0,
+    busNumber: busDataElement.dataset.busNumber,
+    routeName: busDataElement.dataset.routeName,
+    driverName: busDataElement.dataset.driverName,
+    status: busDataElement.dataset.status
+  };
+  
+  // Add bus marker if coordinates exist
+  if (busData.latitude && busData.longitude) {
+    addBusMarker(busData);
+  }
+  
+  // Get student location
+  getStudentLocation();
+  
+  // Initialize button state
+  updateRouteButtonState();
+  
+  // Start socket.io connection
+  setupSocketIO();
+}
+
+// Add bus marker
+function addBusMarker(busData) {
+  const busIcon = L.icon({
+    iconUrl: '/images/bus-marker.png',
+    iconSize: [40, 40],
+    iconAnchor: [20, 40],
+    popupAnchor: [0, -40]
+  });
+  
+  busPosition = {
+    lat: busData.latitude,
+    lng: busData.longitude
+  };
+  
+  busMarker = L.marker([busPosition.lat, busPosition.lng], { icon: busIcon })
+    .addTo(map)
+    .bindPopup(`
+      <strong>Bus ${busData.busNumber}</strong><br>
+      Route: ${busData.routeName || 'N/A'}<br>
+      Status: ${busData.status}
+    `);
+  
+  console.log('Bus marker added at:', busPosition);
+}
+
+// Get student location
+function getStudentLocation() {
+  if (!navigator.geolocation) {
+    console.warn('Geolocation not supported');
+    return;
+  }
+  
+  console.log('Requesting student location...');
+  
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      console.log('Student location received:', position.coords);
+      studentPosition = {
+        lat: position.coords.latitude,
+        lng: position.coords.longitude
+      };
+      
+      // Add student marker
+      addStudentMarker();
+      
+      // Update route if bus exists
+      if (busPosition) {
+        updateRouteAndETA();
+      }
+    },
+    (error) => {
+      console.error('Geolocation error:', error);
+    }
+  );
+}
+
+// Add student marker
+function addStudentMarker() {
+  if (!studentPosition || !map) return;
+  
+  studentMarker = L.marker([studentPosition.lat, studentPosition.lng], {
+    icon: L.divIcon({
+      className: 'student-marker',
+      html: '👨‍🎓',
+      iconSize: [30, 30]
+    })
+  }).addTo(map).bindPopup("Your Location");
+  
+  console.log('Student marker added at:', studentPosition);
+}
+
+// Update route and ETA
+async function updateRouteAndETA() {
+  if (!studentPosition || !busPosition) {
+    console.log('Cannot update route: Missing positions');
+    return;
+  }
+  
+  console.log('Updating route...');
+  
+  try {
+    const routeData = await getRouteInfo(
+      studentPosition.lat, studentPosition.lng,
+      busPosition.lat, busPosition.lng
+    );
+    
+    if (routeData && routeData.coordinates) {
+      drawRoute(routeData.coordinates);
+    } else {
+      // Fallback: straight line
+      drawStraightLine();
+    }
+    
+    updateETA(routeData);
+    updateRouteButtonState();
+    
+    // Fit map to show both markers
+    const bounds = L.latLngBounds([
+      [studentPosition.lat, studentPosition.lng],
+      [busPosition.lat, busPosition.lng]
+    ]);
+    map.fitBounds(bounds, { padding: [50, 50] });
+    
+  } catch (error) {
+    console.error('Route update error:', error);
+  }
+}
+
+// Get route info from server
+async function getRouteInfo(studentLat, studentLng, busLat, busLng) {
+  try {
+    const response = await fetch(
+      `/student/route-info?studentLat=${studentLat}&studentLng=${studentLng}&busLat=${busLat}&busLng=${busLng}`
+    );
+    return await response.json();
+  } catch (error) {
+    console.error('Error getting route info:', error);
+    return null;
+  }
+}
+
+// Draw route line
+function drawRoute(routeCoordinates) {
+  // Remove existing route
+  if (routeLine) {
+    map.removeLayer(routeLine);
+  }
+  
+  if (routeCoordinates && routeCoordinates.length > 0) {
+    // Store coordinates for later re-drawing
+    window.currentRouteCoordinates = routeCoordinates;
+    
+    // Create polyline
+    routeLine = L.polyline(routeCoordinates, {
+      color: '#007bff',
+      weight: 5,
+      opacity: 0.7,
+      lineJoin: 'round'
+    });
+    
+    // Only add to map if route should be visible
+    if (isRouteVisible) {
+      routeLine.addTo(map);
+    }
+    
+    console.log('Route drawn with', routeCoordinates.length, 'points');
+  }
+}
+
+// Draw straight line as fallback
+function drawStraightLine() {
+  if (routeLine) {
+    map.removeLayer(routeLine);
+  }
+  
+  routeLine = L.polyline([
+    [studentPosition.lat, studentPosition.lng],
+    [busPosition.lat, busPosition.lng]
+  ], {
+    color: '#ff6b6b',
+    weight: 3,
+    opacity: 0.7,
+    dashArray: '10, 10'
+  });
+  
+  // Only add to map if route should be visible
+  if (isRouteVisible) {
+    routeLine.addTo(map);
+  }
+}
+
+// Update ETA display
+function updateETA(routeData) {
+  const etaElement = document.getElementById('eta');
+  if (!etaElement) return;
+  
+  if (routeData && routeData.success) {
+    const eta = routeData.duration;
+    const distance = routeData.distance;
+    
+    etaElement.innerHTML = `
+      <h3>📊 Route Information</h3>
+      <p><strong>Road Distance:</strong> ${distance.toFixed(2)} km</p>
+      <p><strong>Estimated Travel Time:</strong> ${Math.round(eta)} minutes</p>
+      ${routeData.isStraightLine ? '<p><em>Using straight-line distance (fallback)</em></p>' : ''}
+    `;
+  } else {
+    etaElement.innerHTML = `
+      <div style="color: #dc3545;">
+        <h3>⚠️ Route Calculation Failed</h3>
+        <p>Using straight-line distance</p>
+      </div>
+    `;
+  }
+}
+
+// === PATH TOGGLE FUNCTIONS ===
+
+// Toggle route visibility
+function toggleRoutePath() {
+  const toggleBtn = document.getElementById('togglePathBtn');
+  
+  if (!toggleBtn) {
+    console.error('Toggle button not found');
+    return;
+  }
+  
+  if (isRouteVisible) {
+    hideRoute();
+    toggleBtn.textContent = 'Show Path';
+    toggleBtn.style.background = '#6c757d';
+  } else {
+    showRoute();
+    toggleBtn.textContent = 'Remove Path';
+    toggleBtn.style.background = '#28a745';
+  }
+}
+
+// Hide route
+function hideRoute() {
+  if (routeLine && map.hasLayer(routeLine)) {
+    map.removeLayer(routeLine);
+    isRouteVisible = false;
+    console.log('Route hidden');
+  }
+}
+
+// Show route
+function showRoute() {
+  if (routeLine && !map.hasLayer(routeLine)) {
+    routeLine.addTo(map);
+    isRouteVisible = true;
+    console.log('Route shown');
+  }
+}
+
+// Update button state
+function updateRouteButtonState() {
+  const toggleBtn = document.getElementById('togglePathBtn');
+  if (!toggleBtn) return;
+  
+  if (!studentPosition || !busPosition) {
+    toggleBtn.disabled = true;
+    toggleBtn.textContent = 'Path Unavailable';
+    toggleBtn.style.background = '#6c757d';
+  } else {
+    toggleBtn.disabled = false;
+    if (isRouteVisible) {
+      toggleBtn.textContent = 'Remove Path';
+      toggleBtn.style.background = '#28a745';
+    } else {
+      toggleBtn.textContent = 'Show Path';
+      toggleBtn.style.background = '#6c757d';
+    }
+  }
+}
+
+// Setup socket.io for real-time updates
+function setupSocketIO() {
+  const socket = io();
+  
+  socket.on('bus-update', (bus) => {
+    console.log('Real-time bus update:', bus);
+    
+    if (busMarker && bus.latitude && bus.longitude) {
+      // Update bus marker position
+      busMarker.setLatLng([bus.latitude, bus.longitude]);
+      
+      // Update bus position
+      busPosition = {
+        lat: bus.latitude,
+        lng: bus.longitude
+      };
+      
+      // Update route if student location exists
+      if (studentPosition) {
+        updateRouteAndETA();
+      }
+    }
+  });
+}
+
+// Make functions available globally
+window.toggleRoutePath = toggleRoutePath;
+
+============================================================
+FILE: public/js/student.js
+============================================================
+
+// Initialize map centered on India
+const map = L.map('map').setView([20.5937, 78.9629], 13);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap contributors'
+}).addTo(map);
+
+let markers = {};
+let studentMarker = null;
+let studentPosition = null;
+
+// Get student's current location
+if (navigator.geolocation) {
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      studentPosition = {
+        lat: position.coords.latitude,
+        lng: position.coords.longitude
+      };
+      
+      // Add student marker
+      studentMarker = L.marker([studentPosition.lat, studentPosition.lng])
+        .addTo(map)
+        .bindPopup("Your Location")
+        .openPopup();
+      
+      // Center map on student
+      map.setView([studentPosition.lat, studentPosition.lng], 13);
+      
+      // Fetch initial bus locations
+      fetchBuses();
+    },
+    (error) => {
+      console.error("Geolocation error:", error);
+      alert("Unable to get your location. Please enable location services.");
+      fetchBuses();
+    }
+  );
+} else {
+  alert("Geolocation is not supported by your browser");
+  fetchBuses();
+}
+
+// Function to fetch bus locations
+function fetchBuses() {
+  fetch('/student/location')
+    .then(res => res.json())
+    .then(buses => {
+      updateBusMarkers(buses);
+    })
+    .catch(err => console.error('Error fetching buses:', err));
+}
+
+// Function to update bus markers on map
+function updateBusMarkers(buses) {
+  buses.forEach(bus => {
+    if (bus.lat && bus.lng) {
+      if (!markers[bus.busNumber]) {
+        // Create new marker
+        markers[bus.busNumber] = L.marker([bus.lat, bus.lng])
+          .addTo(map)
+          .bindPopup(`
+            <strong>Bus ${bus.busNumber}</strong><br>
+            Route: ${bus.routeName || 'N/A'}<br>
+            Last updated: ${new Date(bus.updatedAt).toLocaleTimeString()}
+          `);
+      } else {
+        // Update existing marker position
+        markers[bus.busNumber].setLatLng([bus.lat, bus.lng]);
+      }
+    }
+  });
+}
+
+// Function to track a specific bus
+window.trackBus = function(busNumber) {
+  // Highlight the selected bus
+  if (markers[busNumber]) {
+    map.setView(markers[busNumber].getLatLng(), 15);
+    markers[busNumber].openPopup();
+    
+    // If student location is available, show both
+    if (studentPosition) {
+      const bounds = L.latLngBounds([
+        [studentPosition.lat, studentPosition.lng],
+        markers[busNumber].getLatLng()
+      ]);
+      map.fitBounds(bounds);
+    }
+  }
+  
+  // Highlight in bus list
+  document.querySelectorAll('.bus-card').forEach(card => {
+    card.style.backgroundColor = '';
+  });
+  const selectedCard = document.querySelector(`.bus-card[data-bus-id="${busNumber}"]`);
+  if (selectedCard) {
+    selectedCard.style.backgroundColor = '#e6f7ff';
+  }
+};
+
+// Set up WebSocket for real-time updates
+const socket = io();
+
+socket.on('busLocationUpdate', (bus) => {
+  // Update the marker on map
+  if (bus.lat && bus.lng) {
+    if (!markers[bus.busNumber]) {
+      markers[bus.busNumber] = L.marker([bus.lat, bus.lng])
+        .addTo(map)
+        .bindPopup(`
+          <strong>Bus ${bus.busNumber}</strong><br>
+          Route: ${bus.routeName || 'N/A'}
+        `);
+    } else {
+      markers[bus.busNumber].setLatLng([bus.lat, bus.lng]);
+    }
+    
+    // Update the bus list
+    updateBusCard(bus);
+  }
+});
+
+// Function to update bus card in the list
+function updateBusCard(bus) {
+  const card = document.querySelector(`.bus-card[data-bus-id="${bus.busNumber}"]`);
+  if (card) {
+    card.querySelector('.bus-info:nth-child(3)').textContent = 
+      `Location: ${bus.lat.toFixed(4)}, ${bus.lng.toFixed(4)}`;
+    card.querySelector('.last-update').textContent = 
+      `Updated: ${new Date(bus.updatedAt).toLocaleTimeString()}`;
+  }
+}
+
+// Refresh bus locations every 10 seconds
+setInterval(fetchBuses, 10000);
+
+============================================================
+FILE: routes/adminRoutes.js
+============================================================
+
+// routes/adminRoutes.js - UPDATED VERSION
+const express = require('express');
+const router = express.Router();
+const adminController = require('../controllers/adminController');
+const { isAuthenticated, isAdmin } = require('../middleware/authMiddleware');
+
+// Apply admin middleware to all routes
+router.use(isAuthenticated);
+router.use(isAdmin);
+
+// Dashboard
+router.get('/dashboard', adminController.dashboard);
+
+// User Management
+router.get('/users', adminController.getUsers);
+router.post('/users', adminController.createUser);
+router.put('/users/:id', adminController.updateUser);
+router.delete('/users/:id', adminController.deleteUser);
+// In routes/adminRoutes.js - Add this route
+router.post('/users', async (req, res) => {
+  try {
+    const result = await adminController.createUser(req, res);
+    
+    // If success, redirect
+    if (result.success) {
+      return res.redirect('/admin/users?success=User+created+successfully');
+    }
+    
+    // If error, render form with data
+    const users = await User.find().select('-password');
+    res.render('admin/users', {
+      title: 'User Management',
+      user: req.session,
+      users,
+      currentRole: 'all',
+      search: '',
+      userData: result.formData, // Pass form data back
+      error: result.message
+    });
+    
+  } catch (error) {
+    console.error('Create user route error:', error);
+    res.redirect('/admin/users?error=' + encodeURIComponent(error.message));
+  }
+});
+
+// Bus Management
+router.get('/buses', adminController.getBuses);
+router.post('/buses', adminController.createBus);
+router.put('/buses/:id', adminController.updateBus);
+router.delete('/buses/:id', adminController.deleteBus);
+
+// Real-time Monitoring
+router.get('/monitor', adminController.monitor);
+
+// API endpoints
+router.get('/api/users/:id', adminController.getUser);
+router.get('/api/buses/:id', adminController.getBus);
+router.post('/api/buses/:id/location', adminController.updateBusLocation);
+router.get('/api/buses/live', adminController.getLiveBuses);
+router.get('/api/drivers', adminController.getAvailableDrivers);
+router.get('/api/buses', adminController.getAvailableBuses);
+router.get('/api/analytics/usage', adminController.getAnalytics);
+router.get('/api/export/:type', adminController.exportData);
+
+// Bulk operations
+router.post('/users/bulk-import', adminController.bulkImport);
+
+module.exports = router;
+
+============================================================
+FILE: routes/authRoutes.js
+============================================================
+
+// server/routes/authRoutes.js
+const express = require('express');
+const router = express.Router();
+const User = require('../models/User');
+const Bus = require('../models/Bus');
+const bcrypt = require('bcryptjs');
+
+// Login - API endpoint
+router.post('/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    
+    console.log('🔐 Login attempt for:', email);
+    
+    const user = await User.findOne({ email });
+    
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email or password'
+      });
+    }
+    
+    const validPassword = await bcrypt.compare(password, user.password);
+    if (!validPassword) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email or password'
+      });
+    }
+    
+    // Set session
+    req.session.userId = user._id;
+    req.session.role = user.role;
+    req.session.name = user.name;
+    req.session.email = user.email;
+    req.session.busAssigned = user.busAssigned;
+    
+    res.json({
+      success: true,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        studentId: user.studentId,
+        phone: user.phone,
+        busAssigned: user.busAssigned
+      }
+    });
+    
+  } catch (error) {
+    console.error('💥 Login error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error occurred. Please try again.'
+    });
+  }
+});
+
+// Logout
+router.post('/logout', (req, res) => {
+  req.session.destroy();
+  res.json({
+    success: true,
+    message: 'Logged out successfully'
+  });
+});
+
+// Check authentication status
+router.get('/check', (req, res) => {
+  if (req.session.userId) {
+    res.json({
+      authenticated: true,
+      user: {
+        id: req.session.userId,
+        name: req.session.name,
+        email: req.session.email,
+        role: req.session.role
+      }
+    });
+  } else {
+    res.json({
+      authenticated: false
+    });
+  }
+});
+
+// Create test accounts (for development only)
+router.post('/create-test-accounts', async (req, res) => {
+  try {
+    console.log('Creating test accounts...');
+    
+    // 1. Create a driver
+    const driver = await User.create({
+      name: 'John Driver',
+      email: 'driver@college.edu',
+      password: await bcrypt.hash('driver123', 10),
+      role: 'driver'
+    });
+    
+    // 2. Create a bus and assign to driver
+    const bus = await Bus.create({
+      busId: 'BUS_01',
+      busNumber: '01',
+      routeName: 'Main Campus Route',
+      driverName: driver.name,
+      driverId: driver._id,
+      latitude: 12.9716,
+      longitude: 77.5946,
+      status: 'moving',
+      capacity: 40
+    });
+    
+    // 3. Create a test student
+    const student = await User.create({
+      name: 'Test Student',
+      email: 'student@college.edu',
+      password: await bcrypt.hash('student123', 10),
+      studentId: 'STU001',
+      phone: '1234567890',
+      role: 'student',
+      busAssigned: bus._id
+    });
+    
+    // Add student to bus
+    bus.students.push(student._id);
+    await bus.save();
+    
+    res.json({
+      success: true,
+      accounts: {
+        driver: {
+          email: 'driver@college.edu',
+          password: 'driver123'
+        },
+        student: {
+          email: 'student@college.edu',
+          password: 'student123'
+        }
+      }
+    });
+    
+  } catch (error) {
+    console.error('Creation error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+module.exports = router;
+
+============================================================
+FILE: routes/busRoutes.js
+============================================================
+
+const router = require("express").Router();
+const Bus = require("../models/Bus"); // Add this import
+
+// Fix: Use busNumber instead of busId since your model doesn't have busId
+router.get("/location/:busNumber", async (req, res) => {
+  try {
+    const bus = await Bus.findOne({ busNumber: req.params.busNumber })
+      .sort({ updatedAt: -1 });
+
+    if (!bus) {
+      return res.status(404).json({ 
+        error: `Bus ${req.params.busNumber} not found` 
+      });
+    }
+
+    res.json(bus);
+
+  } catch (error) {
+    console.error("Bus location error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+module.exports = router;
+
+============================================================
+FILE: routes/driverRoutes.js
+============================================================
+
+// server/routes/driverRoutes.js
+const express = require('express');
+const router = express.Router();
+const driverController = require('../controllers/driverController');
+const { isAuthenticated, isDriver } = require('../middleware/authMiddleware');
+
+// Apply driver middleware to all routes
+router.use(isAuthenticated);
+router.use(isDriver);
+
+// Routes
+router.get('/dashboard', driverController.dashboard);
+router.post('/update-live-location', driverController.updateLiveLocation);
+
+module.exports = router;
+
+============================================================
+FILE: routes/studentRoutes.js
+============================================================
+
+const router = require('express').Router();
+const studentController = require('../controllers/studentController');
+const { isAuthenticated, isStudent, getStudentBus } = require('../middleware/authMiddleware');
+
+// All student routes require authentication
+
+
+router.get('/dashboard', studentController.dashboard);
+router.get('/my-bus-location', studentController.getMyBusLocation);
+router.get('/route-info', studentController.getRouteInfo); // Add this line
+
+module.exports = router;
+
+============================================================
+FILE: server.js
+============================================================
+
+const express = require('express');
+const http = require('http');
+const socketIo = require('socket.io');
+const dotenv = require('dotenv');
+const session = require('express-session');
+const connectDB = require('./config/db');
+const Bus = require('./models/Bus');
+const path = require('path');
+const cors = require('cors');
+
+dotenv.config();
+connectDB();
+
+const app = express();
+const server = http.createServer(app);
+const io = socketIo(server, {
+  cors: {
+    origin: process.env.CLIENT_URL || "http://localhost:3000",
+    credentials: true
+  }
+});
+
+// Middleware
+app.use(cors({
+  origin: process.env.CLIENT_URL || "http://localhost:3000",
+  credentials: true
+}));
+
+// Session middleware
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'bus-tracking-secret-key-123',
+  resave: false,
+  saveUninitialized: false,
+  cookie: { 
+    maxAge: 24 * 60 * 60 * 1000,
+    httpOnly: true,
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    secure: process.env.NODE_ENV === 'production'
+  }
+}));
+
+// Make io accessible in controllers
+app.set('io', io);
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// API Routes
+app.use('/api/auth', require('./routes/authRoutes'));
+app.use('/api/driver', require('./routes/driverRoutes'));
+app.use('/api/student', require('./routes/studentRoutes'));
+app.use('/api/bus', require('./routes/busRoutes'));
+app.use('/api/admin', require('./routes/adminRoutes'));
+
+// Socket.io
+io.on('connection', (socket) => {
+  console.log('🔌 Client connected via Socket.io');
+  
+  // Join driver room
+  socket.on('join-driver-room', (driverId) => {
+    socket.join(`driver-${driverId}`);
+    console.log(`👨‍✈️ Driver ${driverId} connected`);
+    
+    socket.emit('driver-connected', {
+      message: 'Driver dashboard connected',
+      timestamp: new Date()
+    });
+  });
+  
+  // Join bus room
+  socket.on('join-bus-room', (busId) => {
+    socket.join(`bus-${busId}`);
+    console.log(`🚌 Client joined bus room: ${busId}`);
+    
+    // Get initial bus data
+    Bus.findById(busId)
+      .then(bus => {
+        if (bus) {
+          socket.emit('bus-initial-data', bus);
+        }
+      })
+      .catch(err => console.error('Error getting bus data:', err));
+  });
+  
+  // Handle live location updates from driver
+  socket.on('driver-location-update', async (data) => {
+    const { busId, latitude, longitude, speed, status } = data;
+    
+    try {
+      await Bus.findByIdAndUpdate(busId, {
+        latitude,
+        longitude,
+        speed,
+        status,
+        updatedAt: new Date()
+      });
+      
+      // Broadcast to all students tracking this bus
+      io.to(`bus-${busId}`).emit('bus-location-update', {
+        ...data,
+        timestamp: new Date()
+      });
+      
+      console.log(`📍 Live update for bus ${busId}:`, {
+        lat: latitude,
+        lng: longitude,
+        speed: speed
+      });
+    } catch (error) {
+      console.error('Error updating bus location:', error);
+    }
+  });
+  
+  // Handle disconnection
+  socket.on('disconnect', () => {
+    console.log('❌ Client disconnected');
+  });
+});
+
+// Add heartbeat to keep connections alive
+setInterval(() => {
+  io.emit('heartbeat', {
+    timestamp: new Date(),
+    activeConnections: io.engine.clientsCount
+  });
+}, 30000);
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ 
+    success: false,
+    message: 'Something went wrong!',
+    error: process.env.NODE_ENV === 'development' ? err.message : {}
+  });
+});
+
+// 404 handler for API routes - FIXED THIS LINE
+app.use('/api/*', (req, res) => {
+  res.status(404).json({ 
+    success: false,
+    message: 'API endpoint not found' 
+  });
+});
+
+// In production, serve React build
+if (process.env.NODE_ENV === 'production') {
+  app.use(express.static(path.join(__dirname, '../client/build')));
+  
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../client/build', 'index.html'));
+  });
+}
+
+// Start server
+const PORT = process.env.PORT || 5000;
+server.listen(PORT, () => {
+  console.log(`✅ Server running on http://localhost:${PORT}`);
+  console.log(`🔌 WebSocket server ready`);
+});
+
+============================================================
+FILE: setup.js
+============================================================
+
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+require('dotenv').config();
+
+async function setup() {
+  try {
+    // Connect to MongoDB
+    await mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://root:root@airbnb.fzehhma.mongodb.net/bus_tracking');
+    console.log('✅ Connected to MongoDB');
+    
+    // Import models
+    const User = require('./models/User');
+    const Bus = require('./models/Bus');
+    
+    // Clear old data
+    await User.deleteMany({});
+    await Bus.deleteMany({});
+    console.log('🧹 Cleared old data');
+    
+    // 1. Create Admin
+    const admin = await User.create({
+      name: 'System Admin',
+      email: 'admin@college.edu',
+      password: await bcrypt.hash('admin123', 10),
+      role: 'admin'
+    });
+    console.log(`👑 Admin created: ${admin.email}`);
+    
+    // 2. Create Driver
+    const driver = await User.create({
+      name: 'John Driver',
+      email: 'driver@college.edu',
+      password: await bcrypt.hash('driver123', 10),
+      role: 'driver',
+      phone: '+1234567890'
+    });
+    console.log(`👨‍✈️ Driver created: ${driver.email}`);
+    
+    // 3. Create Bus and assign to driver
+    const bus = await Bus.create({
+      busId: 'BUS_01',
+      busNumber: '01',
+      routeName: 'Main Campus Route',
+      driverName: driver.name,
+      driverId: driver._id,
+      latitude: 12.9716,
+      longitude: 77.5946,
+      status: 'moving',
+      capacity: 40
+    });
+    console.log(`🚌 Bus created: ${bus.busNumber}`);
+    
+    // 4. Create Student
+    const student = await User.create({
+      name: 'Test Student',
+      email: 'student@college.edu',
+      password: await bcrypt.hash('student123', 10),
+      studentId: 'STU001',
+      phone: '+9876543210',
+      role: 'student',
+      busAssigned: bus._id
+    });
+    console.log(`👨‍🎓 Student created: ${student.email}`);
+    
+    // Add student to bus
+    bus.students.push(student._id);
+    await bus.save();
+    
+    console.log('\n🎉 SETUP COMPLETE!');
+    console.log('\n=== LOGIN CREDENTIALS ===');
+    console.log('ADMIN:');
+    console.log('  Email: admin@college.edu');
+    console.log('  Password: admin123');
+    console.log('  Role: admin');
+    console.log('\nDRIVER:');
+    console.log('  Email: driver@college.edu');
+    console.log('  Password: driver123');
+    console.log('  Role: driver');
+    console.log('\nSTUDENT:');
+    console.log('  Email: student@college.edu');
+    console.log('  Password: student123');
+    console.log('  Role: student');
+    console.log('\n=== NEXT STEPS ===');
+    console.log('1. Run server: npm run dev');
+    console.log('2. Open browser: http://localhost:3000');
+    console.log('3. Use test accounts to login');
+    
+    process.exit(0);
+    
+  } catch (error) {
+    console.error('❌ Setup failed:', error);
+    process.exit(1);
+  }
+}
+
+setup();
+
+============================================================
+FILE: utils/eta.js
+============================================================
+
+module.exports = function calculateETA(busLat, busLng, collegeLat, collegeLng) {
+  const distance =
+    Math.sqrt(
+      Math.pow(busLat - collegeLat, 2) +
+      Math.pow(busLng - collegeLng, 2)
+    ) * 111;
+
+  const speed = 30; // km/h
+  return Math.round((distance / speed) * 60); // minutes
+};
+
+============================================================
+FILE: utils/gpsSimulator.js
+============================================================
+
+let lat = 9.918660;
+let lng = 78.125192;
+
+setInterval(async () => {
+  lat += 0.0001;
+  lng += 0.0001;
+
+  await fetch('http://localhost:3000/driver/update', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ lat, lng })
+  });
+
+  console.log("Fake GPS sent");
+}, 3000);
+
+============================================================
+FILE: utils/routeCalculator.js
+============================================================
+
+const axios = require('axios');
+require('dotenv').config();
+
+class RouteCalculator {
+  constructor() {
+    this.apiKey = process.env.OPENROUTE_API_KEY;
+    this.baseUrl = 'https://api.openrouteservice.org/v2';
+    
+    if (!this.apiKey) {
+      console.warn('⚠️ OpenRouteService API key not found. Using straight-line distance.');
+    }
+  }
+
+  // Calculate road distance and route between two points
+  async calculateRoute(start, end, profile = 'driving-car') {
+    try {
+      // Check if API key exists
+      if (!this.apiKey) {
+        console.log('No API key, using straight-line distance');
+        return this.calculateStraightLineDistance(start, end);
+      }
+
+      console.log('Calculating road route from:', start, 'to:', end);
+      
+      const response = await axios.post(
+        `${this.baseUrl}/directions/${profile}/geojson`,
+        {
+          coordinates: [
+            [start.lng, start.lat],  // OpenRouteService uses [lon, lat]
+            [end.lng, end.lat]
+          ]
+        },
+        {
+          headers: {
+            'Authorization': this.apiKey,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      if (response.data && response.data.features && response.data.features[0]) {
+        const route = response.data.features[0];
+        
+        return {
+          success: true,
+          distance: route.properties.summary.distance / 1000, // Convert meters to km
+          duration: route.properties.summary.duration / 60,   // Convert seconds to minutes
+          geometry: route.geometry,  // GeoJSON line string for map
+          coordinates: this.decodePolyline(route.geometry.coordinates),
+          bbox: route.bbox
+        };
+      }
+      
+      throw new Error('No route found');
+      
+    } catch (error) {
+      console.error('Route calculation error:', error.message);
+      
+      // Fallback to straight-line distance
+      return {
+        ...this.calculateStraightLineDistance(start, end),
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  // Fallback: Calculate straight-line distance (Haversine formula)
+  calculateStraightLineDistance(start, end) {
+    const R = 6371; // Earth's radius in km
+    
+    const dLat = (end.lat - start.lat) * Math.PI / 180;
+    const dLon = (end.lng - start.lng) * Math.PI / 180;
+    
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(start.lat * Math.PI / 180) * Math.cos(end.lat * Math.PI / 180) *
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    const distance = R * c;
+    
+    // Estimate duration (assuming 30 km/h average speed)
+    const duration = (distance / 30) * 60;
+    
+    return {
+      success: true,
+      distance: distance,
+      duration: duration,
+      geometry: null,
+      coordinates: null,
+      isStraightLine: true
+    };
+  }
+
+  // Decode polyline coordinates for Leaflet
+  decodePolyline(coordinates) {
+    return coordinates.map(coord => ({
+      lat: coord[1],  // Latitude
+      lng: coord[0]   // Longitude
+    }));
+  }
+
+  // Calculate ETA based on distance and average speed
+  calculateETA(distanceKm, speedKmh = 30) {
+    const hours = distanceKm / speedKmh;
+    const minutes = Math.round(hours * 60);
+    
+    return {
+      minutes: minutes,
+      hours: hours.toFixed(1),
+      distance: distanceKm.toFixed(2)
+    };
+  }
+}
+
+module.exports = new RouteCalculator();

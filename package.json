@@ -1,0 +1,23 @@
+{
+  "name": "bus-tracking-system",
+  "version": "1.0.0",
+  "description": "Bus Tracking System with React Frontend and Express Backend",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js",
+    "server": "nodemon server/server.js",
+    "client": "cd client && npm start",
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "setup": "node server/setup.js",
+    "install-all": "npm install && cd client && npm install",
+    "build": "cd client && npm run build",
+    "heroku-postbuild": "NPM_CONFIG_PRODUCTION=false npm run install-all && npm run build"
+  },
+  "keywords": ["bus", "tracking", "react", "express"],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "nodemon": "^3.1.11"
+  }
+}

@@ -1,0 +1,162 @@
+const express = require('express');
+const http = require('http');
+const socketIo = require('socket.io');
+const dotenv = require('dotenv');
+const session = require('express-session');
+const connectDB = require('./config/db');
+const Bus = require('./models/Bus');
+const path = require('path');
+const cors = require('cors');
+
+dotenv.config();
+connectDB();
+
+const app = express();
+const server = http.createServer(app);
+const io = socketIo(server, {
+  cors: {
+    origin: process.env.CLIENT_URL || "http://localhost:3000",
+    credentials: true
+  }
+});
+
+// Middleware
+app.use(cors({
+  origin: process.env.CLIENT_URL || "http://localhost:3000",
+  credentials: true
+}));
+
+// Session middleware
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'bus-tracking-secret-key-123',
+  resave: false,
+  saveUninitialized: false,
+  cookie: { 
+    maxAge: 24 * 60 * 60 * 1000,
+    httpOnly: true,
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    secure: process.env.NODE_ENV === 'production'
+  }
+}));
+
+// Make io accessible in controllers
+app.set('io', io);
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// ========== API ROUTES ==========
+app.use('/api/auth', require('./routes/authRoutes'));
+app.use('/api/driver', require('./routes/driverRoutes'));
+app.use('/api/student', require('./routes/studentRoutes'));
+app.use('/api/bus', require('./routes/busRoutes'));
+app.use('/api/admin', require('./routes/adminRoutes'));
+
+// ========== STATIC FILES ==========
+app.use(express.static(path.join(__dirname, '../client/build')));
+
+// ========== SOCKET.IO ==========
+io.on('connection', (socket) => {
+  console.log('🔌 Client connected via Socket.io');
+  
+  // Join driver room
+  socket.on('join-driver-room', (driverId) => {
+    socket.join(`driver-${driverId}`);
+    console.log(`👨‍✈️ Driver ${driverId} connected`);
+    
+    socket.emit('driver-connected', {
+      message: 'Driver dashboard connected',
+      timestamp: new Date()
+    });
+  });
+  
+  // Join bus room
+  socket.on('join-bus-room', (busId) => {
+    socket.join(`bus-${busId}`);
+    console.log(`🚌 Client joined bus room: ${busId}`);
+    
+    // Get initial bus data
+    Bus.findById(busId)
+      .then(bus => {
+        if (bus) {
+          socket.emit('bus-initial-data', bus);
+        }
+      })
+      .catch(err => console.error('Error getting bus data:', err));
+  });
+  
+  // Handle live location updates from driver
+  socket.on('driver-location-update', async (data) => {
+    const { busId, latitude, longitude, speed, status } = data;
+    
+    try {
+      await Bus.findByIdAndUpdate(busId, {
+        latitude,
+        longitude,
+        speed,
+        status,
+        updatedAt: new Date()
+      });
+      
+      // Broadcast to all students tracking this bus
+      io.to(`bus-${busId}`).emit('bus-location-update', {
+        ...data,
+        timestamp: new Date()
+      });
+      
+      console.log(`📍 Live update for bus ${busId}:`, {
+        lat: latitude,
+        lng: longitude,
+        speed: speed
+      });
+    } catch (error) {
+      console.error('Error updating bus location:', error);
+    }
+  });
+  
+  // Handle disconnection
+  socket.on('disconnect', () => {
+    console.log('❌ Client disconnected');
+  });
+});
+
+// Add heartbeat to keep connections alive
+setInterval(() => {
+  io.emit('heartbeat', {
+    timestamp: new Date(),
+    activeConnections: io.engine.clientsCount
+  });
+}, 30000);
+
+// ========== CATCH-ALL ROUTE ==========
+// This must be the LAST route before error handlers
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../client/build', 'index.html'));
+});
+
+// ========== ERROR HANDLERS ==========
+// 404 for API routes
+app.use('/api/*', (req, res) => {
+  res.status(404).json({ 
+    success: false,
+    message: 'API endpoint not found',
+    path: req.path
+  });
+});
+
+// General error handler
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ 
+    success: false,
+    message: 'Something went wrong!',
+    error: process.env.NODE_ENV === 'development' ? err.message : {}
+  });
+});
+
+// Start server
+const PORT = process.env.PORT || 5000;
+server.listen(PORT, () => {
+  console.log(`✅ Server running on http://localhost:${PORT}`);
+  console.log(`🔌 WebSocket server ready`);
+});
